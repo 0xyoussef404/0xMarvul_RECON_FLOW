@@ -30,6 +30,12 @@ ENABLE_PARALLEL=false
 ENABLE_MOREURLS=false
 ENABLE_GREP=false
 COMPARE_MODE=false
+ENABLE_CMS=false
+ENABLE_JS_ENDPOINTS=false
+ENABLE_SCREENSHOT=false
+ENABLE_VULN=false
+ENABLE_PERM=false
+ENABLE_FUZZ=false
 
 # Skip functionality variables
 CURRENT_TOOL_PID=""
@@ -219,6 +225,10 @@ send_discord_complete() {
     local technologies="${11:-N/A}"
     local takeover_count="${12:-0}"
     local secret_count="${13:-0}"
+    local cms_vulns_count="${14:-0}"
+    local js_endpoints_count="${15:-0}"
+    local screenshot_count="${16:-0}"
+    local vuln_count="${17:-0}"
     
     # Calculate duration
     local end_time_epoch=$(date +%s)
@@ -257,6 +267,30 @@ send_discord_complete() {
     if [ "$ENABLE_DIRSEARCH" = true ] && [ "$dirsearch_count" -gt 0 ]; then
         fields="$fields"',
       {"name": "📁 Dirsearch", "value": "'"$dirsearch_count"' found", "inline": true}'
+    fi
+    
+    # Add CMS vulnerabilities field only if it was run
+    if [ "$ENABLE_CMS" = true ]; then
+        fields="$fields"',
+      {"name": "🔧 CMS Vulns", "value": "'"$cms_vulns_count"' found", "inline": true}'
+    fi
+    
+    # Add JS endpoints field only if it was run
+    if [ "$ENABLE_JS_ENDPOINTS" = true ]; then
+        fields="$fields"',
+      {"name": "🔗 JS Endpoints", "value": "'"$js_endpoints_count"' found", "inline": true}'
+    fi
+    
+    # Add screenshot field only if it was run
+    if [ "$ENABLE_SCREENSHOT" = true ]; then
+        fields="$fields"',
+      {"name": "📸 Screenshots", "value": "'"$screenshot_count"' captured", "inline": true}'
+    fi
+    
+    # Add vulnerability scan field only if it was run
+    if [ "$ENABLE_VULN" = true ]; then
+        fields="$fields"',
+      {"name": "⚠️ Vulnerabilities", "value": "'"$vuln_count"' found", "inline": true}'
     fi
     
     fields="$fields"',
@@ -422,6 +456,82 @@ check_dependencies() {
         fi
     fi
     
+    if [ "$ENABLE_CMS" = true ]; then
+        if command -v wpscan &> /dev/null; then
+            print_success "wpscan is installed"
+        else
+            print_warning "wpscan is NOT installed (required for -cms flag)"
+            optional_tools+=("wpscan")
+        fi
+    fi
+    
+    if [ "$ENABLE_JS_ENDPOINTS" = true ]; then
+        if command -v linkfinder &> /dev/null; then
+            print_success "linkfinder is installed"
+        else
+            print_warning "linkfinder is NOT installed (required for -jsendpoints flag)"
+            optional_tools+=("linkfinder")
+        fi
+    fi
+    
+    if [ "$ENABLE_SCREENSHOT" = true ]; then
+        if command -v gowitness &> /dev/null; then
+            print_success "gowitness is installed"
+        else
+            print_warning "gowitness is NOT installed (required for -screenshot flag)"
+            optional_tools+=("gowitness")
+        fi
+    fi
+    
+    if [ "$ENABLE_VULN" = true ]; then
+        if command -v nuclei &> /dev/null; then
+            print_success "nuclei is installed"
+            # Check if templates exist
+            if [ -d "$HOME/nuclei-templates" ]; then
+                print_success "nuclei templates found"
+            else
+                print_warning "nuclei templates not found"
+                print_info "Run: nuclei -update-templates"
+            fi
+        else
+            print_warning "nuclei is NOT installed (required for -vuln flag)"
+            optional_tools+=("nuclei")
+        fi
+    fi
+    
+    if [ "$ENABLE_PERM" = true ]; then
+        if command -v dnsgen &> /dev/null; then
+            print_success "dnsgen is installed"
+        else
+            print_warning "dnsgen is NOT installed (required for -perm flag)"
+            optional_tools+=("dnsgen")
+        fi
+        if command -v dnsx &> /dev/null; then
+            print_success "dnsx is installed"
+        else
+            print_warning "dnsx is NOT installed (required for -perm flag)"
+            optional_tools+=("dnsx")
+        fi
+    fi
+    
+    if [ "$ENABLE_FUZZ" = true ]; then
+        if command -v kxss &> /dev/null; then
+            print_success "kxss is installed"
+        else
+            print_warning "kxss is NOT installed (required for -fuzz flag)"
+            optional_tools+=("kxss")
+        fi
+    fi
+    
+    # Check s3scanner for cloud storage scanning (always check if grep is enabled)
+    if [ "$ENABLE_GREP" = true ]; then
+        if command -v s3scanner &> /dev/null; then
+            print_success "s3scanner is installed (for cloud storage scanning)"
+        else
+            print_info "s3scanner is NOT installed (optional for cloud storage vulnerability scanning)"
+        fi
+    fi
+    
     if [ ${#missing_tools[@]} -gt 0 ]; then
         print_warning "Some tools are missing. Script will continue with available tools."
         print_info "Missing tools: ${missing_tools[*]}"
@@ -451,6 +561,12 @@ usage() {
     echo -e "  ${CYAN}-gf${NC}               Enable GF patterns to filter URLs for vulnerabilities"
     echo -e "  ${CYAN}-port${NC}             Enable port scanning with Naabu and Nmap"
     echo -e "  ${CYAN}-grep${NC}             Extract juicy URLs by keywords (configs, backups, secrets, etc.)"
+    echo -e "  ${CYAN}-cms${NC}              Enable CMS detection and vulnerability scanning (wpscan)"
+    echo -e "  ${CYAN}-jsendpoints${NC}      Extract hidden endpoints from JavaScript files (LinkFinder)"
+    echo -e "  ${CYAN}-screenshot${NC}       Capture screenshots of live hosts (gowitness)"
+    echo -e "  ${CYAN}-vuln${NC}             Run Nuclei with critical vulnerability templates"
+    echo -e "  ${CYAN}-perm${NC}             Generate subdomain permutations with dnsgen and validate with dnsx"
+    echo -e "  ${CYAN}-fuzz${NC}             Test parameters for XSS reflection with kxss"
     echo -e "  ${CYAN}-compare${NC}          Compare subdomains with previous scan (subdomain enum + live check only)"
     echo -e "  ${CYAN}--webhook <url>${NC}   Use custom Discord webhook URL"
     echo -e "  ${CYAN}--no-notify${NC}       Disable Discord notifications"
@@ -468,8 +584,10 @@ usage() {
     echo -e "  ${CYAN}$0 target.com -takeover${NC}"
     echo -e "  ${CYAN}$0 target.com -port${NC}"
     echo -e "  ${CYAN}$0 target.com -compare${NC}"
+    echo -e "  ${CYAN}$0 target.com -cms -screenshot -vuln${NC}"
+    echo -e "  ${CYAN}$0 target.com -jsendpoints -secret${NC}"
     echo -e "  ${CYAN}$0 target.com -parallel -moreurls -dir -gf${NC}"
-    echo -e "  ${CYAN}$0 target.com -dir -gf -secret -takeover -port${NC}"
+    echo -e "  ${CYAN}$0 target.com -dir -gf -secret -takeover -port -vuln${NC}"
     echo ""
     exit 1
 }
@@ -515,6 +633,30 @@ main() {
                 ;;
             -port)
                 ENABLE_PORT_SCAN=true
+                shift
+                ;;
+            -cms)
+                ENABLE_CMS=true
+                shift
+                ;;
+            -jsendpoints)
+                ENABLE_JS_ENDPOINTS=true
+                shift
+                ;;
+            -screenshot)
+                ENABLE_SCREENSHOT=true
+                shift
+                ;;
+            -vuln)
+                ENABLE_VULN=true
+                shift
+                ;;
+            -perm)
+                ENABLE_PERM=true
+                shift
+                ;;
+            -fuzz)
+                ENABLE_FUZZ=true
                 shift
                 ;;
             --webhook)
@@ -899,6 +1041,68 @@ main() {
     else
         print_error "No subdomain files found"
         total_subs=0
+    fi
+    
+    # Subdomain Permutations (Optional)
+    perm_count=0
+    if [ "$ENABLE_PERM" = true ]; then
+        print_step "Subdomain Permutations (-perm)"
+        print_info "Timestamp: $(get_timestamp)"
+        
+        if [ -s all_subs.txt ] && command -v dnsgen &> /dev/null && command -v dnsx &> /dev/null; then
+            print_info "Generating subdomain permutations with dnsgen..."
+            print_skip_hint
+            
+            # Generate permutations
+            run_with_skip "dnsgen" "cat all_subs.txt | dnsgen - > permutations.txt 2>/dev/null"
+            local exit_code=$?
+            
+            if [ $exit_code -eq 0 ] || [ $exit_code -eq 2 ]; then
+                if [ -s permutations.txt ]; then
+                    perm_generated=$(wc -l < permutations.txt 2>/dev/null || echo 0)
+                    print_info "Generated $perm_generated permutations"
+                    
+                    # Validate permutations with dnsx
+                    print_info "Validating permutations with dnsx..."
+                    run_with_skip "dnsx-perm" "cat permutations.txt | dnsx -silent -o valid_permutations.txt 2>/dev/null"
+                    local dnsx_exit=$?
+                    
+                    if [ $dnsx_exit -eq 0 ] || [ $dnsx_exit -eq 2 ]; then
+                        if [ -s valid_permutations.txt ]; then
+                            # Merge new valid subdomains with existing ones
+                            cat all_subs.txt valid_permutations.txt | sort -u > all_subs_updated.txt
+                            mv all_subs_updated.txt all_subs.txt
+                            
+                            perm_count=$(wc -l < valid_permutations.txt 2>/dev/null || echo 0)
+                            total_subs=$(wc -l < all_subs.txt)
+                            
+                            if [ $dnsx_exit -eq 0 ]; then
+                                print_success "Found $perm_count new valid subdomains via permutations"
+                                print_info "Updated total subdomains: $total_subs"
+                            else
+                                print_info "Found $perm_count new valid subdomains via permutations (partial)"
+                            fi
+                        else
+                            print_info "No new valid subdomains found from permutations"
+                        fi
+                    else
+                        print_error "dnsx validation failed"
+                        failed_tools+=("dnsx-perm")
+                    fi
+                else
+                    print_info "No permutations generated"
+                fi
+            else
+                print_error "dnsgen failed"
+                failed_tools+=("dnsgen")
+            fi
+        else
+            if [ ! -s all_subs.txt ]; then
+                print_warning "No subdomains to generate permutations from"
+            else
+                print_warning "dnsgen or dnsx not installed, skipping permutations..."
+            fi
+        fi
     fi
     
     # Step 3: Check for Live Web Servers
@@ -1347,6 +1551,73 @@ EOF
         fi
     fi
     
+    # CMS Analysis (Optional)
+    cms_vulns_count=0
+    if [ "$ENABLE_CMS" = true ]; then
+        print_step "CMS Analysis (-cms)"
+        print_info "Timestamp: $(get_timestamp)"
+        
+        if [ -s live_hosts.txt ] && command -v wpscan &> /dev/null; then
+            print_info "Detecting and scanning WordPress sites..."
+            print_skip_hint
+            
+            # Check tech_detect.txt for WordPress sites or use httpx to detect
+            wordpress_sites=()
+            
+            # First check tech_detect.txt if it exists
+            if [ -s tech_detect.txt ]; then
+                while IFS= read -r line; do
+                    if echo "$line" | grep -iq "wordpress"; then
+                        url=$(echo "$line" | awk '{print $1}')
+                        if [ -n "$url" ]; then
+                            wordpress_sites+=("$url")
+                        fi
+                    fi
+                done < tech_detect.txt
+            fi
+            
+            # If no WordPress found in tech_detect, try quick check on first few live hosts
+            if [ ${#wordpress_sites[@]} -eq 0 ]; then
+                print_info "Checking for WordPress installations..."
+                while IFS= read -r url; do
+                    if timeout 5 curl -s -L "$url/wp-login.php" 2>/dev/null | grep -iq "wordpress"; then
+                        wordpress_sites+=("$url")
+                    fi
+                done < <(head -n 10 live_hosts.txt)
+            fi
+            
+            if [ ${#wordpress_sites[@]} -gt 0 ]; then
+                print_info "Found ${#wordpress_sites[@]} WordPress site(s)"
+                
+                # Create CMS output file
+                > cms_scan.txt
+                
+                for wp_url in "${wordpress_sites[@]}"; do
+                    print_info "Scanning WordPress at: $wp_url"
+                    
+                    # Run WPScan for vulnerability detection (without API token if not configured)
+                    wpscan --url "$wp_url" --enumerate vp,vt,u --random-user-agent --format cli 2>/dev/null | tee -a cms_scan.txt || true
+                    echo "---" >> cms_scan.txt
+                done
+                
+                if [ -s cms_scan.txt ]; then
+                    cms_vulns_count=$(grep -c "Title:" cms_scan.txt 2>/dev/null || echo 0)
+                    print_success "CMS Analysis completed - Found $cms_vulns_count potential vulnerabilities"
+                else
+                    print_info "CMS Analysis completed - No vulnerabilities found"
+                fi
+            else
+                print_info "No WordPress sites detected"
+            fi
+        else
+            if [ ! -s live_hosts.txt ]; then
+                print_warning "No live hosts to scan for CMS"
+            else
+                print_warning "wpscan not installed, skipping CMS analysis..."
+            fi
+        fi
+    fi
+    
     # Step 4: URL Gathering
     print_step "Step 4: URL Gathering"
     print_info "Timestamp: $(get_timestamp)"
@@ -1527,6 +1798,55 @@ EOF
         print_warning "ParamSpider not installed, skipping parameter discovery..."
     fi
     
+    # XSS Parameter Fuzzing (Optional)
+    xss_count=0
+    if [ "$ENABLE_FUZZ" = true ]; then
+        print_step "XSS Parameter Fuzzing (-fuzz)"
+        print_info "Timestamp: $(get_timestamp)"
+        
+        if [ -s params.txt ] && command -v kxss &> /dev/null; then
+            print_info "Testing parameters for XSS reflection with kxss..."
+            print_skip_hint
+            
+            # Run kxss on params.txt
+            run_with_skip "kxss" "cat params.txt | kxss > potential_xss.txt 2>/dev/null"
+            local exit_code=$?
+            
+            if [ $exit_code -eq 0 ] || [ $exit_code -eq 2 ]; then
+                if [ -s potential_xss.txt ]; then
+                    xss_count=$(wc -l < potential_xss.txt 2>/dev/null || echo 0)
+                    
+                    if [ $xss_count -gt 0 ]; then
+                        if [ $exit_code -eq 0 ]; then
+                            print_success "Found $xss_count parameters with potential XSS reflection!"
+                        else
+                            print_info "Found $xss_count parameters with potential XSS reflection (partial)"
+                        fi
+                        
+                        # Send Discord alert for XSS findings
+                        if [ -n "$DISCORD_WEBHOOK" ] && [ "$NOTIFY_ENABLED" = true ]; then
+                            send_discord "⚠️ Potential XSS Found!" "Found $xss_count parameters with reflection on $DOMAIN" 16776960 '[{"name": "Target", "value": "'"$DOMAIN"'", "inline": true}, {"name": "Reflected Parameters", "value": "'"$xss_count"'", "inline": true}]' "0xMarvul RECON FLOW - ALERT"
+                        fi
+                    else
+                        print_info "No reflected parameters found"
+                    fi
+                else
+                    print_info "XSS fuzzing completed - No reflections found"
+                fi
+            else
+                print_error "kxss failed"
+                failed_tools+=("kxss")
+            fi
+        else
+            if [ ! -s params.txt ]; then
+                print_warning "No parameters to fuzz for XSS"
+            else
+                print_warning "kxss not installed, skipping XSS fuzzing..."
+                print_info "Install: go install github.com/Emoe/kxss@latest"
+            fi
+        fi
+    fi
+    
     # Step 5: Filter Specific File Types (JavaScript Extraction)
     print_step "Step 5: JavaScript Extraction"
     print_info "Timestamp: $(get_timestamp)"
@@ -1686,6 +2006,58 @@ EOF
         fi
     fi
     
+    # Cloud Storage Vulnerability Scanning
+    cloud_vuln_count=0
+    if [ "$ENABLE_GREP" = true ] && [ -f grep_results/cloud.txt ] && [ -s grep_results/cloud.txt ]; then
+        print_step "Cloud Storage Vulnerability Scanning"
+        print_info "Timestamp: $(get_timestamp)"
+        
+        if command -v s3scanner &> /dev/null; then
+            print_info "Scanning cloud storage URLs for misconfigurations..."
+            
+            # Extract URLs ending with specific cloud providers
+            grep -iE "(amazonaws\.com|digitaloceanspaces\.com|core\.windows\.net)" grep_results/cloud.txt > cloud_targets.txt 2>/dev/null
+            
+            if [ -s cloud_targets.txt ]; then
+                target_count=$(wc -l < cloud_targets.txt)
+                print_info "Found $target_count cloud storage URLs to scan"
+                
+                # Run s3scanner
+                print_skip_hint
+                run_with_skip "s3scanner" "s3scanner scan --buckets-file cloud_targets.txt > cloud_vulnerabilities.txt 2>/dev/null"
+                local exit_code=$?
+                
+                if [ $exit_code -eq 0 ] || [ $exit_code -eq 2 ]; then
+                    if [ -s cloud_vulnerabilities.txt ]; then
+                        # Count vulnerable buckets (look for PUBLIC or WRITABLE)
+                        cloud_vuln_count=$(grep -iE "(public|writable|open)" cloud_vulnerabilities.txt 2>/dev/null | wc -l)
+                        
+                        if [ $cloud_vuln_count -gt 0 ]; then
+                            print_success "Found $cloud_vuln_count potential cloud storage misconfigurations!"
+                            
+                            # Send Discord alert for cloud vulnerabilities
+                            if [ -n "$DISCORD_WEBHOOK" ] && [ "$NOTIFY_ENABLED" = true ]; then
+                                send_discord "🚨 Cloud Storage Vulnerabilities!" "Found $cloud_vuln_count potential misconfigurations on $DOMAIN" 16711680 '[{"name": "Target", "value": "'"$DOMAIN"'", "inline": true}, {"name": "Vulnerable Buckets", "value": "'"$cloud_vuln_count"'", "inline": true}]' "0xMarvul RECON FLOW - CRITICAL"
+                            fi
+                        else
+                            print_info "No cloud storage vulnerabilities found"
+                        fi
+                    else
+                        print_info "Cloud storage scan completed - No results"
+                    fi
+                else
+                    print_error "s3scanner failed"
+                    failed_tools+=("s3scanner")
+                fi
+            else
+                print_info "No cloud storage URLs found to scan"
+            fi
+        else
+            print_info "s3scanner not installed - skipping cloud storage vulnerability scanning"
+            print_info "Install: pip install s3scanner"
+        fi
+    fi
+    
     # Step 9: GF Patterns (Optional)
     if [ "$ENABLE_GF" = true ]; then
         print_step "Step 9: GF Patterns (-gf)"
@@ -1821,6 +2193,133 @@ EOF
         fi
     fi
     
+    # JS Endpoint Extraction (Optional)
+    js_endpoints_count=0
+    if [ "$ENABLE_JS_ENDPOINTS" = true ]; then
+        print_step "JS Endpoint Extraction (-jsendpoints)"
+        print_info "Timestamp: $(get_timestamp)"
+        
+        if [ -s javascript.txt ] && command -v linkfinder &> /dev/null; then
+            print_info "Extracting hidden endpoints from JavaScript files..."
+            print_skip_hint
+            
+            # Run LinkFinder on JS files - collect all then deduplicate
+            > endpoints_temp.txt
+            
+            while IFS= read -r js_url; do
+                # Extract endpoints from each JS file
+                linkfinder -i "$js_url" -o cli 2>/dev/null | grep -oP 'https?://[^\s<>"]+|/[^\s<>"]*' >> endpoints_temp.txt || true
+            done < javascript.txt
+            
+            # Deduplicate and save final results
+            if [ -s endpoints_temp.txt ]; then
+                sort -u endpoints_temp.txt -o endpoints.txt
+                rm -f endpoints_temp.txt
+                js_endpoints_count=$(wc -l < endpoints.txt 2>/dev/null || echo 0)
+                print_success "JS Endpoint Extraction completed - Found $js_endpoints_count unique endpoints"
+            else
+                rm -f endpoints_temp.txt
+                print_info "JS Endpoint Extraction completed - No new endpoints found"
+            fi
+        else
+            if [ ! -s javascript.txt ]; then
+                print_warning "No JavaScript files to extract endpoints from"
+            else
+                print_warning "linkfinder not installed, skipping JS endpoint extraction..."
+            fi
+        fi
+    fi
+    
+    # Screenshot Capture (Optional)
+    screenshot_count=0
+    if [ "$ENABLE_SCREENSHOT" = true ]; then
+        print_step "Screenshot Capture (-screenshot)"
+        print_info "Timestamp: $(get_timestamp)"
+        
+        if [ -s live_hosts.txt ] && command -v gowitness &> /dev/null; then
+            print_info "Capturing screenshots of live hosts..."
+            print_skip_hint
+            
+            # Create screenshots directory
+            mkdir -p screenshots
+            
+            # Run gowitness
+            run_with_skip "gowitness" "gowitness file -f live_hosts.txt --screenshot-path screenshots/ --disable-logging 2>/dev/null"
+            local exit_code=$?
+            
+            if [ $exit_code -eq 0 ] || [ $exit_code -eq 2 ]; then
+                screenshot_count=$(find screenshots/ -type f \( -name "*.png" -o -name "*.jpg" \) 2>/dev/null | wc -l)
+                if [ $screenshot_count -gt 0 ]; then
+                    if [ $exit_code -eq 0 ]; then
+                        print_success "Screenshot capture completed - $screenshot_count screenshots saved"
+                    else
+                        print_info "Screenshot capture - $screenshot_count screenshots saved (partial)"
+                    fi
+                else
+                    print_warning "Screenshot capture completed - No screenshots captured"
+                fi
+            else
+                print_error "Screenshot capture failed"
+                failed_tools+=("gowitness")
+                send_discord_error "$DOMAIN" "gowitness" "Command execution failed"
+            fi
+        else
+            if [ ! -s live_hosts.txt ]; then
+                print_warning "No live hosts to capture screenshots"
+            else
+                print_warning "gowitness not installed, skipping screenshots..."
+            fi
+        fi
+    fi
+    
+    # Vulnerability Scanning (Optional)
+    vuln_count=0
+    if [ "$ENABLE_VULN" = true ]; then
+        print_step "Vulnerability Scanning (-vuln)"
+        print_info "Timestamp: $(get_timestamp)"
+        
+        if [ -s allurls.txt ] && command -v nuclei &> /dev/null; then
+            print_info "Running Nuclei with critical severity templates..."
+            print_skip_hint
+            
+            # Extract unique hosts from URLs for scanning
+            grep -oP 'https?://[^/]+' allurls.txt 2>/dev/null | sort -u > vuln_targets.txt
+            
+            if [ -s vuln_targets.txt ]; then
+                # Run Nuclei with critical templates only
+                run_with_skip "nuclei-vuln" "nuclei -l vuln_targets.txt -severity critical,high -o vuln_scan.txt 2>/dev/null"
+                local exit_code=$?
+                
+                if [ $exit_code -eq 0 ] || [ $exit_code -eq 2 ]; then
+                    if [ -s vuln_scan.txt ]; then
+                        vuln_count=$(grep -c . vuln_scan.txt 2>/dev/null || echo 0)
+                        if [ $exit_code -eq 0 ]; then
+                            print_success "Vulnerability scanning completed - Found $vuln_count potential vulnerabilities"
+                        else
+                            print_info "Vulnerability scanning - Found $vuln_count potential vulnerabilities (partial)"
+                        fi
+                    else
+                        if [ $exit_code -eq 0 ]; then
+                            print_success "Vulnerability scanning completed - No critical vulnerabilities found"
+                        fi
+                    fi
+                else
+                    print_error "Vulnerability scanning failed"
+                    failed_tools+=("nuclei-vuln")
+                    send_discord_error "$DOMAIN" "nuclei (vuln scan)" "Command execution failed"
+                fi
+            else
+                print_warning "No URLs to scan for vulnerabilities"
+            fi
+        else
+            if [ ! -s allurls.txt ]; then
+                print_warning "No URLs to scan for vulnerabilities"
+            else
+                print_warning "nuclei not installed, skipping vulnerability scanning..."
+            fi
+        fi
+    fi
+    
     # Final Summary
     print_step "FINAL SUMMARY"
     print_info "End Time: $(get_timestamp)"
@@ -1858,6 +2357,28 @@ EOF
     fi
     if [ "$ENABLE_GF" = true ]; then
         echo -e "  ${GREEN}►${NC} GF Patterns saved to: ${BOLD}gf/${NC} folder"
+    fi
+    if [ "$ENABLE_CMS" = true ]; then
+        echo -e "  ${GREEN}►${NC} CMS Vulnerabilities: ${BOLD}${cms_vulns_count:-0}${NC}"
+    fi
+    if [ "$ENABLE_JS_ENDPOINTS" = true ]; then
+        echo -e "  ${GREEN}►${NC} JS Endpoints extracted: ${BOLD}${js_endpoints_count:-0}${NC}"
+    fi
+    if [ "$ENABLE_SCREENSHOT" = true ]; then
+        echo -e "  ${GREEN}►${NC} Screenshots captured: ${BOLD}${screenshot_count:-0}${NC}"
+    fi
+    if [ "$ENABLE_VULN" = true ]; then
+        echo -e "  ${GREEN}►${NC} Vulnerabilities found: ${BOLD}${vuln_count:-0}${NC}"
+    fi
+    if [ "$ENABLE_PERM" = true ]; then
+        echo -e "  ${GREEN}►${NC} Subdomain Permutations: ${BOLD}${perm_count:-0}${NC}"
+    fi
+    if [ "$ENABLE_FUZZ" = true ]; then
+        echo -e "  ${GREEN}►${NC} Potential XSS: ${BOLD}${xss_count:-0}${NC}"
+    fi
+    if [ -f cloud_vulnerabilities.txt ] && [ -s cloud_vulnerabilities.txt ]; then
+        local cloud_vuln_display=$(grep -iE "(public|writable|open)" cloud_vulnerabilities.txt 2>/dev/null | wc -l)
+        echo -e "  ${GREEN}►${NC} Cloud Storage Vulnerabilities: ${BOLD}${cloud_vuln_display}${NC}"
     fi
     echo ""
     
@@ -1918,6 +2439,31 @@ EOF
         echo -e "      ${CYAN}•${NC} internal.txt - Internal & private paths"
         echo -e "      ${CYAN}•${NC} cloud.txt - Cloud & AWS (s3, amazonaws)"
         echo -e "      ${CYAN}•${NC} ALL_JUICY.txt - All juicy URLs combined"
+    fi
+    if [ "$ENABLE_CMS" = true ]; then
+        echo -e "  ${CYAN}►${NC} ${BOLD}cms_scan.txt${NC} - CMS vulnerability scan results (WordPress)"
+    fi
+    if [ "$ENABLE_JS_ENDPOINTS" = true ]; then
+        echo -e "  ${CYAN}►${NC} ${BOLD}endpoints.txt${NC} - Hidden endpoints extracted from JavaScript files"
+    fi
+    if [ "$ENABLE_SCREENSHOT" = true ]; then
+        echo -e "  ${CYAN}►${NC} ${BOLD}screenshots/${NC} - Directory containing screenshots of live hosts"
+    fi
+    if [ "$ENABLE_VULN" = true ]; then
+        echo -e "  ${CYAN}►${NC} ${BOLD}vuln_scan.txt${NC} - Critical/high severity vulnerabilities found by Nuclei"
+    fi
+    if [ "$ENABLE_PERM" = true ]; then
+        echo -e "  ${CYAN}►${NC} ${BOLD}permutations.txt${NC} - Generated subdomain permutations"
+        echo -e "  ${CYAN}►${NC} ${BOLD}valid_permutations.txt${NC} - Valid subdomain permutations (DNS validated)"
+    fi
+    if [ "$ENABLE_FUZZ" = true ]; then
+        echo -e "  ${CYAN}►${NC} ${BOLD}potential_xss.txt${NC} - Parameters with potential XSS reflection"
+    fi
+    if [ -f cloud_vulnerabilities.txt ] && [ -s cloud_vulnerabilities.txt ]; then
+        echo -e "  ${CYAN}►${NC} ${BOLD}cloud_vulnerabilities.txt${NC} - Cloud storage misconfigurations (S3, Azure, etc.)"
+    fi
+    if [ -f summary.txt ]; then
+        echo -e "  ${CYAN}►${NC} ${BOLD}summary.txt${NC} - Scan summary (sent to Discord)"
     fi
     echo ""
     
@@ -1981,11 +2527,135 @@ ${secret_count_local}"
             fi
         fi
         
+        if [ "$ENABLE_CMS" = true ]; then
+            local cms_vulns_count_local=$(grep -c "Title:" cms_scan.txt 2>/dev/null || echo 0)
+            if [ "$cms_vulns_count_local" -gt 0 ]; then
+                discord_msg="${discord_msg}
+🔧 CMS Vulns
+${cms_vulns_count_local}"
+            fi
+        fi
+        
+        if [ "$ENABLE_JS_ENDPOINTS" = true ]; then
+            local js_endpoints_count_local=$(wc -l < endpoints.txt 2>/dev/null || echo 0)
+            if [ "$js_endpoints_count_local" -gt 0 ]; then
+                discord_msg="${discord_msg}
+🔗 JS Endpoints
+${js_endpoints_count_local}"
+            fi
+        fi
+        
+        if [ "$ENABLE_SCREENSHOT" = true ]; then
+            local screenshot_count_local=$(find screenshots/ -type f \( -name "*.png" -o -name "*.jpg" \) 2>/dev/null | wc -l)
+            if [ "$screenshot_count_local" -gt 0 ]; then
+                discord_msg="${discord_msg}
+📸 Screenshots
+${screenshot_count_local}"
+            fi
+        fi
+        
+        if [ "$ENABLE_VULN" = true ]; then
+            local vuln_count_local=$(wc -l < vuln_scan.txt 2>/dev/null || echo 0)
+            if [ "$vuln_count_local" -gt 0 ]; then
+                discord_msg="${discord_msg}
+⚠️ Vulnerabilities
+${vuln_count_local}"
+            fi
+        fi
+        
+        if [ "$ENABLE_PERM" = true ]; then
+            local perm_count_local=$(wc -l < valid_permutations.txt 2>/dev/null || echo 0)
+            if [ "$perm_count_local" -gt 0 ]; then
+                discord_msg="${discord_msg}
+🔀 Permutations
+${perm_count_local}"
+            fi
+        fi
+        
+        if [ "$ENABLE_FUZZ" = true ]; then
+            local xss_count_local=$(wc -l < potential_xss.txt 2>/dev/null || echo 0)
+            if [ "$xss_count_local" -gt 0 ]; then
+                discord_msg="${discord_msg}
+⚠️ Potential XSS
+${xss_count_local}"
+            fi
+        fi
+        
+        if [ -f cloud_vulnerabilities.txt ] && [ -s cloud_vulnerabilities.txt ]; then
+            local cloud_vuln_count_local=$(grep -iE "(public|writable|open)" cloud_vulnerabilities.txt 2>/dev/null | wc -l)
+            if [ "$cloud_vuln_count_local" -gt 0 ]; then
+                discord_msg="${discord_msg}
+☁️ Cloud Vulns
+${cloud_vuln_count_local}"
+            fi
+        fi
+        
         discord_msg="${discord_msg}
 ⏱️ Duration
 ${DURATION_MIN}m ${DURATION_REMAIN}s"
         
+        # Send text notification
         send_discord "✅ Recon Complete" "$discord_msg" 65280 "[]" "0xMarvul RECON FLOW"
+        
+        # Create and send summary file
+        print_info "Creating summary file..."
+        cat > summary.txt << EOF
+=================================================
+0xMarvul RECON FLOW - Scan Summary
+=================================================
+Target: $DOMAIN
+Scan Date: $(date)
+Duration: ${DURATION_MIN}m ${DURATION_REMAIN}s
+
+=================================================
+RESULTS
+=================================================
+Total Subdomains: $(wc -l < all_subs.txt 2>/dev/null || echo 0)
+Live Hosts: $(wc -l < live_hosts.txt 2>/dev/null || echo 0)
+Total URLs: $(wc -l < allurls.txt 2>/dev/null || echo 0)
+JavaScript Files: $(wc -l < javascript.txt 2>/dev/null || echo 0)
+PHP Files: $(grep -c '\.php' allurls.txt 2>/dev/null || echo 0)
+JSON Files: $(grep -c '\.json' allurls.txt 2>/dev/null || echo 0)
+Parameters: $(wc -l < params.txt 2>/dev/null || echo 0)
+EOF
+
+        # Add optional sections to summary
+        [ "$ENABLE_PERM" = true ] && echo "Subdomain Permutations: $(wc -l < valid_permutations.txt 2>/dev/null || echo 0)" >> summary.txt
+        [ "$ENABLE_FUZZ" = true ] && echo "Potential XSS: $(wc -l < potential_xss.txt 2>/dev/null || echo 0)" >> summary.txt
+        [ "$ENABLE_CMS" = true ] && echo "CMS Vulnerabilities: $(grep -c "Title:" cms_scan.txt 2>/dev/null || echo 0)" >> summary.txt
+        [ "$ENABLE_VULN" = true ] && echo "Critical Vulnerabilities: $(wc -l < vuln_scan.txt 2>/dev/null || echo 0)" >> summary.txt
+        [ -f cloud_vulnerabilities.txt ] && [ -s cloud_vulnerabilities.txt ] && echo "Cloud Storage Vulns: $(grep -iE "(public|writable|open)" cloud_vulnerabilities.txt 2>/dev/null | wc -l)" >> summary.txt
+        
+        echo "" >> summary.txt
+        echo "=================================================" >> summary.txt
+        echo "Files saved in: $OUTPUT_DIR/" >> summary.txt
+        echo "=================================================" >> summary.txt
+        
+        # Upload files to Discord
+        print_info "Uploading results to Discord..."
+        
+        # Upload summary.txt
+        if [ -f summary.txt ]; then
+            curl -F "file=@summary.txt" \
+                 -F "content=📊 Scan Summary for $DOMAIN" \
+                 "$DISCORD_WEBHOOK" > /dev/null 2>&1
+        fi
+        
+        # Upload all_subs.txt if it exists and has content
+        if [ -f all_subs.txt ] && [ -s all_subs.txt ]; then
+            local sub_count=$(wc -l < all_subs.txt)
+            # Only upload if file is not too large (< 8MB Discord limit)
+            local file_size=$(stat -f%z all_subs.txt 2>/dev/null || stat -c%s all_subs.txt 2>/dev/null || echo 0)
+            if [ "$file_size" -lt 8000000 ]; then
+                curl -F "file=@all_subs.txt" \
+                     -F "content=📁 All Subdomains ($sub_count total)" \
+                     "$DISCORD_WEBHOOK" > /dev/null 2>&1
+            else
+                print_warning "all_subs.txt too large to upload to Discord (>8MB)"
+            fi
+        fi
+        
+        print_success "Discord notifications and file uploads complete!"
     fi
     
     print_success "Reconnaissance completed!"

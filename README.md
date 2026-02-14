@@ -4,21 +4,34 @@
 
 A comprehensive bash-based reconnaissance automation tool for bug bounty hunting and security assessments. This tool automates the process of subdomain enumeration, live host discovery, URL gathering, and sensitive file detection.
 
+## 📚 Documentation
+
+- **[Quick Reference](QUICK_REFERENCE.md)** - Fast command reference for new features
+- **[New Features Guide](NEW_FEATURES.md)** - Detailed documentation for recently added features
+- **[Full README](#features)** - Complete feature list and usage examples (below)
+
 ## Features
 
 - **Automated Subdomain Enumeration**: Uses multiple sources (Subfinder, Assetfinder, crt.sh, Shrewdeye, HackerTarget, RapidDNS, Anubis-DB)
 - **Parallel Subdomain Enumeration**: Optional parallel mode with `-parallel` flag for faster subdomain discovery
+- **Subdomain Permutations**: Optional generation of subdomain permutations with dnsgen and validation with dnsx (use `-perm` flag)
 - **Live Host Detection**: Identifies active web servers using httpx
 - **Subdomain Takeover Check**: Optional check for subdomain takeover vulnerabilities with Nuclei (use `-takeover` flag)
 - **Technology Detection**: Detects web technologies, CMS, frameworks, and servers
+- **CMS Vulnerability Scanning**: Optional WordPress vulnerability scanning with wpscan (use `-cms` flag)
 - **URL Discovery**: Gathers URLs from multiple sources (Gospider, Waybackurls, Katana)
 - **Extended URL Discovery**: Optional extra URL gathering with GAU and Hakrawler (use `-moreurls` flag)
 - **Parameter Discovery**: Discovers URL parameters using ParamSpider
+- **XSS Parameter Fuzzing**: Optional testing of parameters for XSS reflection with kxss (use `-fuzz` flag)
 - **Directory Bruteforce**: Optional directory and file discovery with Dirsearch (use `-dir` flag)
 - **Secret Finding**: Optional secret discovery in JavaScript files with SecretFinder (use `-secret` flag)
+- **JavaScript Endpoint Extraction**: Optional extraction of hidden endpoints from JS files with LinkFinder (use `-jsendpoints` flag)
+- **Visual Reconnaissance**: Optional screenshot capture of live hosts with gowitness (use `-screenshot` flag)
+- **Critical Vulnerability Scanning**: Optional scanning for critical vulnerabilities with Nuclei (use `-vuln` flag)
+- **Cloud Storage Scanning**: Automatic scanning of S3 buckets and cloud storage for misconfigurations
 - **Smart Filtering**: Automatically categorizes JavaScript, PHP, JSON, and sensitive files
 - **BIGRAC Detection**: Identifies sensitive files like Swagger docs, API endpoints, config files, credentials, etc.
-- **Discord Notifications**: Real-time notifications via Discord webhooks (enabled by default)
+- **Discord Notifications**: Real-time notifications via Discord webhooks with file attachments (enabled by default)
 - **Graceful Skip Feature**: Press **ENTER** to skip any long-running tool while preserving partial results
 - **Error Handling**: Continues execution even if some tools fail or timeout
 - **Color-Coded Output**: Easy-to-read terminal output with status indicators
@@ -303,6 +316,55 @@ This tool requires several external security tools to be installed. Below are th
     go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
     ```
 
+19. **wpscan** - WordPress vulnerability scanner (only needed if using `-cms` flag)
+    ```bash
+    # Install Ruby first if not already installed
+    # Ubuntu/Debian
+    sudo apt-get install ruby ruby-dev
+    
+    # Install wpscan
+    gem install wpscan
+    
+    # Get API token (optional but recommended) from https://wpscan.com/
+    ```
+
+20. **LinkFinder** - Extract endpoints from JavaScript (only needed if using `-jsendpoints` flag)
+    ```bash
+    # Clone and install
+    git clone https://github.com/GerbenJavado/LinkFinder.git
+    cd LinkFinder
+    pip install -r requirements.txt
+    python setup.py install
+    
+    # Or install via pip
+    pip install linkfinder
+    ```
+
+21. **gowitness** - Web screenshot utility (only needed if using `-screenshot` flag)
+    ```bash
+    go install github.com/sensepost/gowitness@latest
+    ```
+
+22. **dnsgen** - Subdomain permutation generator (only needed if using `-perm` flag)
+    ```bash
+    pip install dnsgen
+    ```
+
+23. **dnsx** - Fast DNS resolver (only needed if using `-perm` flag)
+    ```bash
+    go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+    ```
+
+24. **kxss** - XSS reflection detector (only needed if using `-fuzz` flag)
+    ```bash
+    go install github.com/Emoe/kxss@latest
+    ```
+
+25. **s3scanner** - Cloud storage scanner (automatically used with `-grep` flag)
+    ```bash
+    pip install s3scanner
+    ```
+
 ### Quick Installation (All Go Tools)
 
 If you have Go installed, you can install all Go-based tools at once:
@@ -379,6 +441,12 @@ Basic usage:
 | `-gf` | Enable GF patterns to filter URLs for vulnerabilities |
 | `-grep` | Extract juicy URLs by keywords (configs, backups, secrets, admin panels, etc.) |
 | `-port` | Enable port scanning with Naabu and Nmap |
+| `-cms` | Enable CMS detection and vulnerability scanning with wpscan |
+| `-jsendpoints` | Extract hidden endpoints from JavaScript files with LinkFinder |
+| `-screenshot` | Capture screenshots of live hosts with gowitness |
+| `-vuln` | Run Nuclei with critical/high severity vulnerability templates |
+| `-perm` | Generate subdomain permutations with dnsgen and validate with dnsx |
+| `-fuzz` | Test parameters for XSS reflection with kxss |
 | `-compare` | Compare subdomains with previous scan (subdomain enum + live check only) |
 | `--webhook <url>` | Use custom Discord webhook URL |
 | `--no-notify` | Disable Discord notifications |
@@ -445,9 +513,55 @@ Basic usage:
 ./0xMarvul_RECON_FLOW.sh target.com -compare
 ```
 
+**With CMS vulnerability scanning:**
+```bash
+./0xMarvul_RECON_FLOW.sh example.com -cms
+```
+
+**With JS endpoint extraction:**
+```bash
+./0xMarvul_RECON_FLOW.sh example.com -jsendpoints
+```
+
+**With screenshot capture:**
+```bash
+./0xMarvul_RECON_FLOW.sh example.com -screenshot
+```
+
+**With critical vulnerability scanning:**
+```bash
+./0xMarvul_RECON_FLOW.sh example.com -vuln
+```
+
+**With subdomain permutations:**
+```bash
+./0xMarvul_RECON_FLOW.sh example.com -perm
+```
+
+**With XSS parameter fuzzing:**
+```bash
+./0xMarvul_RECON_FLOW.sh example.com -fuzz
+```
+
+**With cloud storage scanning:**
+```bash
+./0xMarvul_RECON_FLOW.sh example.com -grep
+# S3Scanner automatically runs when grep finds cloud URLs
+```
+
+**Advanced reconnaissance with new features:**
+```bash
+./0xMarvul_RECON_FLOW.sh example.com -perm -fuzz -grep
+```
+
+**With new advanced features combined:**
+```bash
+./0xMarvul_RECON_FLOW.sh example.com -cms -jsendpoints -screenshot -vuln
+```
+
 **With all optional features:**
 ```bash
-./0xMarvul_RECON_FLOW.sh example.com -parallel -moreurls -dir -secret -takeover -gf -port
+./0xMarvul_RECON_FLOW.sh example.com -parallel -moreurls -dir -secret -takeover -gf -port -cms -jsendpoints -screenshot -vuln
 ```
 
 **Custom webhook without notifications:**
@@ -521,7 +635,16 @@ target.com/
 │   └── secrets_found.txt       # Secrets found by SecretFinder
 ├── mar0xwan.txt                # Dirsearch results (only if -dir flag used)
 ├── open_ports.txt              # Open ports discovered by Naabu (only if -port flag used)
-└── ports_detailed.txt          # Detailed port scan with service detection (only if -port flag used)
+├── ports_detailed.txt          # Detailed port scan with service detection (only if -port flag used)
+├── cms_scan.txt                # CMS vulnerability scan results (only if -cms flag used)
+├── endpoints.txt               # Hidden endpoints extracted from JS files (only if -jsendpoints flag used)
+├── screenshots/                # Directory containing screenshots of live hosts (only if -screenshot flag used)
+├── vuln_scan.txt               # Critical/high severity vulnerabilities (only if -vuln flag used)
+├── permutations.txt            # Generated subdomain permutations (only if -perm flag used)
+├── valid_permutations.txt      # DNS-validated subdomain permutations (only if -perm flag used)
+├── potential_xss.txt           # Parameters with XSS reflection (only if -fuzz flag used)
+├── cloud_vulnerabilities.txt   # Cloud storage misconfigurations (auto-generated with -grep)
+└── summary.txt                 # Scan summary uploaded to Discord
 ```
 
 ### With `-grep` flag:
@@ -572,10 +695,23 @@ Sent when the scan finishes successfully, showing:
 - Subdomain takeovers found (if `-takeover` flag used)
 - Secrets found (if `-secret` flag used)
 - Dirsearch results (if `-dir` flag used)
+- CMS vulnerabilities (if `-cms` flag used)
+- JS endpoints (if `-jsendpoints` flag used)
+- Screenshots captured (if `-screenshot` flag used)
+- Critical vulnerabilities (if `-vuln` flag used)
+- Subdomain permutations (if `-perm` flag used)
+- Potential XSS (if `-fuzz` flag used)
+- Cloud storage vulnerabilities (auto-detected with `-grep`)
 - Technologies detected
 - Total scan duration
+- **Attached Files**: summary.txt and all_subs.txt
 
-#### 3. Error Notifications
+#### 3. Critical Alerts
+Sent immediately when critical issues are found:
+- ⚠️ **Potential XSS Found**: When reflection is detected in parameters
+- 🚨 **Cloud Storage Vulnerabilities**: When misconfigured S3/Azure/DO buckets are found
+
+#### 4. Error Notifications
 Sent whenever a tool fails or times out, showing:
 - Which tool encountered an error
 - Error message or reason
@@ -721,6 +857,15 @@ The tool uses color-coded output for better readability:
 | `grep_results/internal.txt` | Internal path URLs | internal, private paths |
 | `grep_results/cloud.txt` | Cloud service URLs | s3, amazonaws |
 | `grep_results/ALL_JUICY.txt` | All juicy URLs combined | Complete list of findings |
+| `cms_scan.txt` | CMS vulnerability scan results | WordPress vulnerabilities (if -cms used) |
+| `endpoints.txt` | Extracted JS endpoints | Hidden API endpoints from JavaScript (if -jsendpoints used) |
+| `screenshots/` | Screenshot directory | Visual recon of live hosts (if -screenshot used) |
+| `vuln_scan.txt` | Vulnerability scan results | Critical/high severity vulnerabilities (if -vuln used) |
+| `permutations.txt` | Subdomain permutations | Generated permutations from existing subdomains (if -perm used) |
+| `valid_permutations.txt` | Validated permutations | DNS-validated new subdomains (if -perm used) |
+| `potential_xss.txt` | XSS reflection candidates | Parameters with reflected XSS symbols (if -fuzz used) |
+| `cloud_vulnerabilities.txt` | Cloud storage vulns | S3/Azure/DO bucket misconfigurations (with -grep) |
+| `summary.txt` | Scan summary | Complete results summary sent to Discord |
 
 ## BIGRAC Detection
 

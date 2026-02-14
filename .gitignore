@@ -1,0 +1,12 @@
+# Recon output directories
+*/
+
+# Exclude this gitignore itself from the pattern above
+!.gitignore
+
+# Screenshot output
+screenshots/
+
+# Test files
+test_*.sh
+*.log
