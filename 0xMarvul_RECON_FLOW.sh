@@ -1472,11 +1472,11 @@ EOF
             # If no WordPress found in tech_detect, try quick check on first few live hosts
             if [ ${#wordpress_sites[@]} -eq 0 ]; then
                 print_info "Checking for WordPress installations..."
-                head -n 10 live_hosts.txt | while IFS= read -r url; do
+                while IFS= read -r url; do
                     if timeout 5 curl -s -L "$url/wp-login.php" 2>/dev/null | grep -iq "wordpress"; then
                         wordpress_sites+=("$url")
                     fi
-                done
+                done < <(head -n 10 live_hosts.txt)
             fi
             
             if [ ${#wordpress_sites[@]} -gt 0 ]; then
@@ -1488,8 +1488,8 @@ EOF
                 for wp_url in "${wordpress_sites[@]}"; do
                     print_info "Scanning WordPress at: $wp_url"
                     
-                    # Run WPScan for vulnerability detection
-                    wpscan --url "$wp_url" --enumerate vp,vt,u --random-user-agent --api-token "" --format cli 2>/dev/null | tee -a cms_scan.txt || true
+                    # Run WPScan for vulnerability detection (without API token if not configured)
+                    wpscan --url "$wp_url" --enumerate vp,vt,u --random-user-agent --format cli 2>/dev/null | tee -a cms_scan.txt || true
                     echo "---" >> cms_scan.txt
                 done
                 
@@ -1995,20 +1995,22 @@ EOF
             print_info "Extracting hidden endpoints from JavaScript files..."
             print_skip_hint
             
-            # Run LinkFinder on JS files
-            > endpoints.txt
+            # Run LinkFinder on JS files - collect all then deduplicate
+            > endpoints_temp.txt
             
             while IFS= read -r js_url; do
-                # Extract domain for output naming
-                linkfinder -i "$js_url" -o cli 2>/dev/null | grep -oP 'https?://[^\s<>"]+|/[^\s<>"]*' | sort -u >> endpoints.txt || true
+                # Extract endpoints from each JS file
+                linkfinder -i "$js_url" -o cli 2>/dev/null | grep -oP 'https?://[^\s<>"]+|/[^\s<>"]*' >> endpoints_temp.txt || true
             done < javascript.txt
             
-            # Remove duplicates and clean up
-            if [ -s endpoints.txt ]; then
-                sort -u endpoints.txt -o endpoints.txt
+            # Deduplicate and save final results
+            if [ -s endpoints_temp.txt ]; then
+                sort -u endpoints_temp.txt -o endpoints.txt
+                rm -f endpoints_temp.txt
                 js_endpoints_count=$(wc -l < endpoints.txt 2>/dev/null || echo 0)
                 print_success "JS Endpoint Extraction completed - Found $js_endpoints_count unique endpoints"
             else
+                rm -f endpoints_temp.txt
                 print_info "JS Endpoint Extraction completed - No new endpoints found"
             fi
         else
