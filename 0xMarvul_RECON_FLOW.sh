@@ -30,6 +30,10 @@ ENABLE_PARALLEL=false
 ENABLE_MOREURLS=false
 ENABLE_GREP=false
 COMPARE_MODE=false
+ENABLE_CMS=false
+ENABLE_JS_ENDPOINTS=false
+ENABLE_SCREENSHOT=false
+ENABLE_VULN=false
 
 # Skip functionality variables
 CURRENT_TOOL_PID=""
@@ -219,6 +223,10 @@ send_discord_complete() {
     local technologies="${11:-N/A}"
     local takeover_count="${12:-0}"
     local secret_count="${13:-0}"
+    local cms_vulns_count="${14:-0}"
+    local js_endpoints_count="${15:-0}"
+    local screenshot_count="${16:-0}"
+    local vuln_count="${17:-0}"
     
     # Calculate duration
     local end_time_epoch=$(date +%s)
@@ -257,6 +265,30 @@ send_discord_complete() {
     if [ "$ENABLE_DIRSEARCH" = true ] && [ "$dirsearch_count" -gt 0 ]; then
         fields="$fields"',
       {"name": "📁 Dirsearch", "value": "'"$dirsearch_count"' found", "inline": true}'
+    fi
+    
+    # Add CMS vulnerabilities field only if it was run
+    if [ "$ENABLE_CMS" = true ]; then
+        fields="$fields"',
+      {"name": "🔧 CMS Vulns", "value": "'"$cms_vulns_count"' found", "inline": true}'
+    fi
+    
+    # Add JS endpoints field only if it was run
+    if [ "$ENABLE_JS_ENDPOINTS" = true ]; then
+        fields="$fields"',
+      {"name": "🔗 JS Endpoints", "value": "'"$js_endpoints_count"' found", "inline": true}'
+    fi
+    
+    # Add screenshot field only if it was run
+    if [ "$ENABLE_SCREENSHOT" = true ]; then
+        fields="$fields"',
+      {"name": "📸 Screenshots", "value": "'"$screenshot_count"' captured", "inline": true}'
+    fi
+    
+    # Add vulnerability scan field only if it was run
+    if [ "$ENABLE_VULN" = true ]; then
+        fields="$fields"',
+      {"name": "⚠️ Vulnerabilities", "value": "'"$vuln_count"' found", "inline": true}'
     fi
     
     fields="$fields"',
@@ -422,6 +454,49 @@ check_dependencies() {
         fi
     fi
     
+    if [ "$ENABLE_CMS" = true ]; then
+        if command -v wpscan &> /dev/null; then
+            print_success "wpscan is installed"
+        else
+            print_warning "wpscan is NOT installed (required for -cms flag)"
+            optional_tools+=("wpscan")
+        fi
+    fi
+    
+    if [ "$ENABLE_JS_ENDPOINTS" = true ]; then
+        if command -v linkfinder &> /dev/null; then
+            print_success "linkfinder is installed"
+        else
+            print_warning "linkfinder is NOT installed (required for -jsendpoints flag)"
+            optional_tools+=("linkfinder")
+        fi
+    fi
+    
+    if [ "$ENABLE_SCREENSHOT" = true ]; then
+        if command -v gowitness &> /dev/null; then
+            print_success "gowitness is installed"
+        else
+            print_warning "gowitness is NOT installed (required for -screenshot flag)"
+            optional_tools+=("gowitness")
+        fi
+    fi
+    
+    if [ "$ENABLE_VULN" = true ]; then
+        if command -v nuclei &> /dev/null; then
+            print_success "nuclei is installed"
+            # Check if templates exist
+            if [ -d "$HOME/nuclei-templates" ]; then
+                print_success "nuclei templates found"
+            else
+                print_warning "nuclei templates not found"
+                print_info "Run: nuclei -update-templates"
+            fi
+        else
+            print_warning "nuclei is NOT installed (required for -vuln flag)"
+            optional_tools+=("nuclei")
+        fi
+    fi
+    
     if [ ${#missing_tools[@]} -gt 0 ]; then
         print_warning "Some tools are missing. Script will continue with available tools."
         print_info "Missing tools: ${missing_tools[*]}"
@@ -451,6 +526,10 @@ usage() {
     echo -e "  ${CYAN}-gf${NC}               Enable GF patterns to filter URLs for vulnerabilities"
     echo -e "  ${CYAN}-port${NC}             Enable port scanning with Naabu and Nmap"
     echo -e "  ${CYAN}-grep${NC}             Extract juicy URLs by keywords (configs, backups, secrets, etc.)"
+    echo -e "  ${CYAN}-cms${NC}              Enable CMS detection and vulnerability scanning (wpscan)"
+    echo -e "  ${CYAN}-jsendpoints${NC}      Extract hidden endpoints from JavaScript files (LinkFinder)"
+    echo -e "  ${CYAN}-screenshot${NC}       Capture screenshots of live hosts (gowitness)"
+    echo -e "  ${CYAN}-vuln${NC}             Run Nuclei with critical vulnerability templates"
     echo -e "  ${CYAN}-compare${NC}          Compare subdomains with previous scan (subdomain enum + live check only)"
     echo -e "  ${CYAN}--webhook <url>${NC}   Use custom Discord webhook URL"
     echo -e "  ${CYAN}--no-notify${NC}       Disable Discord notifications"
@@ -468,8 +547,10 @@ usage() {
     echo -e "  ${CYAN}$0 target.com -takeover${NC}"
     echo -e "  ${CYAN}$0 target.com -port${NC}"
     echo -e "  ${CYAN}$0 target.com -compare${NC}"
+    echo -e "  ${CYAN}$0 target.com -cms -screenshot -vuln${NC}"
+    echo -e "  ${CYAN}$0 target.com -jsendpoints -secret${NC}"
     echo -e "  ${CYAN}$0 target.com -parallel -moreurls -dir -gf${NC}"
-    echo -e "  ${CYAN}$0 target.com -dir -gf -secret -takeover -port${NC}"
+    echo -e "  ${CYAN}$0 target.com -dir -gf -secret -takeover -port -vuln${NC}"
     echo ""
     exit 1
 }
@@ -515,6 +596,22 @@ main() {
                 ;;
             -port)
                 ENABLE_PORT_SCAN=true
+                shift
+                ;;
+            -cms)
+                ENABLE_CMS=true
+                shift
+                ;;
+            -jsendpoints)
+                ENABLE_JS_ENDPOINTS=true
+                shift
+                ;;
+            -screenshot)
+                ENABLE_SCREENSHOT=true
+                shift
+                ;;
+            -vuln)
+                ENABLE_VULN=true
                 shift
                 ;;
             --webhook)
@@ -1347,6 +1444,58 @@ EOF
         fi
     fi
     
+    # CMS Analysis (Optional)
+    cms_vulns_count=0
+    if [ "$ENABLE_CMS" = true ]; then
+        print_step "CMS Analysis (-cms)"
+        print_info "Timestamp: $(get_timestamp)"
+        
+        if [ -s live_hosts.txt ] && command -v wpscan &> /dev/null; then
+            print_info "Detecting and scanning WordPress sites..."
+            print_skip_hint
+            
+            # Check if WordPress sites exist
+            wordpress_sites=()
+            while IFS= read -r url; do
+                # Quick check if site uses WordPress
+                if echo "$technologies" | grep -iq "wordpress" 2>/dev/null || \
+                   curl -s -L "$url/wp-login.php" -m 5 2>/dev/null | grep -q "wordpress" 2>/dev/null; then
+                    wordpress_sites+=("$url")
+                fi
+            done < live_hosts.txt
+            
+            if [ ${#wordpress_sites[@]} -gt 0 ]; then
+                print_info "Found ${#wordpress_sites[@]} WordPress site(s)"
+                
+                # Create CMS output file
+                > cms_scan.txt
+                
+                for wp_url in "${wordpress_sites[@]}"; do
+                    print_info "Scanning WordPress at: $wp_url"
+                    
+                    # Run WPScan for vulnerability detection
+                    wpscan --url "$wp_url" --enumerate vp,vt,u --random-user-agent --api-token "" --format cli 2>/dev/null | tee -a cms_scan.txt || true
+                    echo "---" >> cms_scan.txt
+                done
+                
+                if [ -s cms_scan.txt ]; then
+                    cms_vulns_count=$(grep -c "Title:" cms_scan.txt 2>/dev/null || echo 0)
+                    print_success "CMS Analysis completed - Found $cms_vulns_count potential vulnerabilities"
+                else
+                    print_info "CMS Analysis completed - No vulnerabilities found"
+                fi
+            else
+                print_info "No WordPress sites detected"
+            fi
+        else
+            if [ ! -s live_hosts.txt ]; then
+                print_warning "No live hosts to scan for CMS"
+            else
+                print_warning "wpscan not installed, skipping CMS analysis..."
+            fi
+        fi
+    fi
+    
     # Step 4: URL Gathering
     print_step "Step 4: URL Gathering"
     print_info "Timestamp: $(get_timestamp)"
@@ -1821,6 +1970,131 @@ EOF
         fi
     fi
     
+    # JS Endpoint Extraction (Optional)
+    js_endpoints_count=0
+    if [ "$ENABLE_JS_ENDPOINTS" = true ]; then
+        print_step "JS Endpoint Extraction (-jsendpoints)"
+        print_info "Timestamp: $(get_timestamp)"
+        
+        if [ -s javascript.txt ] && command -v linkfinder &> /dev/null; then
+            print_info "Extracting hidden endpoints from JavaScript files..."
+            print_skip_hint
+            
+            # Run LinkFinder on JS files
+            > endpoints.txt
+            
+            while IFS= read -r js_url; do
+                # Extract domain for output naming
+                linkfinder -i "$js_url" -o cli 2>/dev/null | grep -oP 'https?://[^\s<>"]+|/[^\s<>"]*' | sort -u >> endpoints.txt || true
+            done < javascript.txt
+            
+            # Remove duplicates and clean up
+            if [ -s endpoints.txt ]; then
+                sort -u endpoints.txt -o endpoints.txt
+                js_endpoints_count=$(wc -l < endpoints.txt 2>/dev/null || echo 0)
+                print_success "JS Endpoint Extraction completed - Found $js_endpoints_count unique endpoints"
+            else
+                print_info "JS Endpoint Extraction completed - No new endpoints found"
+            fi
+        else
+            if [ ! -s javascript.txt ]; then
+                print_warning "No JavaScript files to extract endpoints from"
+            else
+                print_warning "linkfinder not installed, skipping JS endpoint extraction..."
+            fi
+        fi
+    fi
+    
+    # Screenshot Capture (Optional)
+    screenshot_count=0
+    if [ "$ENABLE_SCREENSHOT" = true ]; then
+        print_step "Screenshot Capture (-screenshot)"
+        print_info "Timestamp: $(get_timestamp)"
+        
+        if [ -s live_hosts.txt ] && command -v gowitness &> /dev/null; then
+            print_info "Capturing screenshots of live hosts..."
+            print_skip_hint
+            
+            # Create screenshots directory
+            mkdir -p screenshots
+            
+            # Run gowitness
+            run_with_skip "gowitness" "gowitness file -f live_hosts.txt --screenshot-path screenshots/ --disable-logging 2>/dev/null"
+            local exit_code=$?
+            
+            if [ $exit_code -eq 0 ] || [ $exit_code -eq 2 ]; then
+                screenshot_count=$(find screenshots/ -type f \( -name "*.png" -o -name "*.jpg" \) 2>/dev/null | wc -l)
+                if [ $screenshot_count -gt 0 ]; then
+                    if [ $exit_code -eq 0 ]; then
+                        print_success "Screenshot capture completed - $screenshot_count screenshots saved"
+                    else
+                        print_info "Screenshot capture - $screenshot_count screenshots saved (partial)"
+                    fi
+                else
+                    print_warning "Screenshot capture completed - No screenshots captured"
+                fi
+            else
+                print_error "Screenshot capture failed"
+                failed_tools+=("gowitness")
+                send_discord_error "$DOMAIN" "gowitness" "Command execution failed"
+            fi
+        else
+            if [ ! -s live_hosts.txt ]; then
+                print_warning "No live hosts to capture screenshots"
+            else
+                print_warning "gowitness not installed, skipping screenshots..."
+            fi
+        fi
+    fi
+    
+    # Vulnerability Scanning (Optional)
+    vuln_count=0
+    if [ "$ENABLE_VULN" = true ]; then
+        print_step "Vulnerability Scanning (-vuln)"
+        print_info "Timestamp: $(get_timestamp)"
+        
+        if [ -s allurls.txt ] && command -v nuclei &> /dev/null; then
+            print_info "Running Nuclei with critical severity templates..."
+            print_skip_hint
+            
+            # Extract unique hosts from URLs for scanning
+            grep -oP 'https?://[^/]+' allurls.txt 2>/dev/null | sort -u > vuln_targets.txt
+            
+            if [ -s vuln_targets.txt ]; then
+                # Run Nuclei with critical templates only
+                run_with_skip "nuclei-vuln" "nuclei -l vuln_targets.txt -severity critical,high -o vuln_scan.txt 2>/dev/null"
+                local exit_code=$?
+                
+                if [ $exit_code -eq 0 ] || [ $exit_code -eq 2 ]; then
+                    if [ -s vuln_scan.txt ]; then
+                        vuln_count=$(grep -c . vuln_scan.txt 2>/dev/null || echo 0)
+                        if [ $exit_code -eq 0 ]; then
+                            print_success "Vulnerability scanning completed - Found $vuln_count potential vulnerabilities"
+                        else
+                            print_info "Vulnerability scanning - Found $vuln_count potential vulnerabilities (partial)"
+                        fi
+                    else
+                        if [ $exit_code -eq 0 ]; then
+                            print_success "Vulnerability scanning completed - No critical vulnerabilities found"
+                        fi
+                    fi
+                else
+                    print_error "Vulnerability scanning failed"
+                    failed_tools+=("nuclei-vuln")
+                    send_discord_error "$DOMAIN" "nuclei (vuln scan)" "Command execution failed"
+                fi
+            else
+                print_warning "No URLs to scan for vulnerabilities"
+            fi
+        else
+            if [ ! -s allurls.txt ]; then
+                print_warning "No URLs to scan for vulnerabilities"
+            else
+                print_warning "nuclei not installed, skipping vulnerability scanning..."
+            fi
+        fi
+    fi
+    
     # Final Summary
     print_step "FINAL SUMMARY"
     print_info "End Time: $(get_timestamp)"
@@ -1858,6 +2132,18 @@ EOF
     fi
     if [ "$ENABLE_GF" = true ]; then
         echo -e "  ${GREEN}►${NC} GF Patterns saved to: ${BOLD}gf/${NC} folder"
+    fi
+    if [ "$ENABLE_CMS" = true ]; then
+        echo -e "  ${GREEN}►${NC} CMS Vulnerabilities: ${BOLD}${cms_vulns_count:-0}${NC}"
+    fi
+    if [ "$ENABLE_JS_ENDPOINTS" = true ]; then
+        echo -e "  ${GREEN}►${NC} JS Endpoints extracted: ${BOLD}${js_endpoints_count:-0}${NC}"
+    fi
+    if [ "$ENABLE_SCREENSHOT" = true ]; then
+        echo -e "  ${GREEN}►${NC} Screenshots captured: ${BOLD}${screenshot_count:-0}${NC}"
+    fi
+    if [ "$ENABLE_VULN" = true ]; then
+        echo -e "  ${GREEN}►${NC} Vulnerabilities found: ${BOLD}${vuln_count:-0}${NC}"
     fi
     echo ""
     
@@ -1919,6 +2205,18 @@ EOF
         echo -e "      ${CYAN}•${NC} cloud.txt - Cloud & AWS (s3, amazonaws)"
         echo -e "      ${CYAN}•${NC} ALL_JUICY.txt - All juicy URLs combined"
     fi
+    if [ "$ENABLE_CMS" = true ]; then
+        echo -e "  ${CYAN}►${NC} ${BOLD}cms_scan.txt${NC} - CMS vulnerability scan results (WordPress)"
+    fi
+    if [ "$ENABLE_JS_ENDPOINTS" = true ]; then
+        echo -e "  ${CYAN}►${NC} ${BOLD}endpoints.txt${NC} - Hidden endpoints extracted from JavaScript files"
+    fi
+    if [ "$ENABLE_SCREENSHOT" = true ]; then
+        echo -e "  ${CYAN}►${NC} ${BOLD}screenshots/${NC} - Directory containing screenshots of live hosts"
+    fi
+    if [ "$ENABLE_VULN" = true ]; then
+        echo -e "  ${CYAN}►${NC} ${BOLD}vuln_scan.txt${NC} - Critical/high severity vulnerabilities found by Nuclei"
+    fi
     echo ""
     
     if [ ${#failed_tools[@]} -gt 0 ]; then
@@ -1978,6 +2276,42 @@ ${port_count_local}"
                 discord_msg="${discord_msg}
 🔑 Secrets
 ${secret_count_local}"
+            fi
+        fi
+        
+        if [ "$ENABLE_CMS" = true ]; then
+            local cms_vulns_count_local=$(grep -c "Title:" cms_scan.txt 2>/dev/null || echo 0)
+            if [ "$cms_vulns_count_local" -gt 0 ]; then
+                discord_msg="${discord_msg}
+🔧 CMS Vulns
+${cms_vulns_count_local}"
+            fi
+        fi
+        
+        if [ "$ENABLE_JS_ENDPOINTS" = true ]; then
+            local js_endpoints_count_local=$(wc -l < endpoints.txt 2>/dev/null || echo 0)
+            if [ "$js_endpoints_count_local" -gt 0 ]; then
+                discord_msg="${discord_msg}
+🔗 JS Endpoints
+${js_endpoints_count_local}"
+            fi
+        fi
+        
+        if [ "$ENABLE_SCREENSHOT" = true ]; then
+            local screenshot_count_local=$(find screenshots/ -type f \( -name "*.png" -o -name "*.jpg" \) 2>/dev/null | wc -l)
+            if [ "$screenshot_count_local" -gt 0 ]; then
+                discord_msg="${discord_msg}
+📸 Screenshots
+${screenshot_count_local}"
+            fi
+        fi
+        
+        if [ "$ENABLE_VULN" = true ]; then
+            local vuln_count_local=$(wc -l < vuln_scan.txt 2>/dev/null || echo 0)
+            if [ "$vuln_count_local" -gt 0 ]; then
+                discord_msg="${discord_msg}
+⚠️ Vulnerabilities
+${vuln_count_local}"
             fi
         fi
         

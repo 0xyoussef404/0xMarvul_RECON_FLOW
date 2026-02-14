@@ -11,11 +11,15 @@ A comprehensive bash-based reconnaissance automation tool for bug bounty hunting
 - **Live Host Detection**: Identifies active web servers using httpx
 - **Subdomain Takeover Check**: Optional check for subdomain takeover vulnerabilities with Nuclei (use `-takeover` flag)
 - **Technology Detection**: Detects web technologies, CMS, frameworks, and servers
+- **CMS Vulnerability Scanning**: Optional WordPress vulnerability scanning with wpscan (use `-cms` flag)
 - **URL Discovery**: Gathers URLs from multiple sources (Gospider, Waybackurls, Katana)
 - **Extended URL Discovery**: Optional extra URL gathering with GAU and Hakrawler (use `-moreurls` flag)
 - **Parameter Discovery**: Discovers URL parameters using ParamSpider
 - **Directory Bruteforce**: Optional directory and file discovery with Dirsearch (use `-dir` flag)
 - **Secret Finding**: Optional secret discovery in JavaScript files with SecretFinder (use `-secret` flag)
+- **JavaScript Endpoint Extraction**: Optional extraction of hidden endpoints from JS files with LinkFinder (use `-jsendpoints` flag)
+- **Visual Reconnaissance**: Optional screenshot capture of live hosts with gowitness (use `-screenshot` flag)
+- **Critical Vulnerability Scanning**: Optional scanning for critical vulnerabilities with Nuclei (use `-vuln` flag)
 - **Smart Filtering**: Automatically categorizes JavaScript, PHP, JSON, and sensitive files
 - **BIGRAC Detection**: Identifies sensitive files like Swagger docs, API endpoints, config files, credentials, etc.
 - **Discord Notifications**: Real-time notifications via Discord webhooks (enabled by default)
@@ -303,6 +307,35 @@ This tool requires several external security tools to be installed. Below are th
     go install -v github.com/projectdiscovery/dnsx/cmd/dnsx@latest
     ```
 
+19. **wpscan** - WordPress vulnerability scanner (only needed if using `-cms` flag)
+    ```bash
+    # Install Ruby first if not already installed
+    # Ubuntu/Debian
+    sudo apt-get install ruby ruby-dev
+    
+    # Install wpscan
+    gem install wpscan
+    
+    # Get API token (optional but recommended) from https://wpscan.com/
+    ```
+
+20. **LinkFinder** - Extract endpoints from JavaScript (only needed if using `-jsendpoints` flag)
+    ```bash
+    # Clone and install
+    git clone https://github.com/GerbenJavado/LinkFinder.git
+    cd LinkFinder
+    pip install -r requirements.txt
+    python setup.py install
+    
+    # Or install via pip
+    pip install linkfinder
+    ```
+
+21. **gowitness** - Web screenshot utility (only needed if using `-screenshot` flag)
+    ```bash
+    go install github.com/sensepost/gowitness@latest
+    ```
+
 ### Quick Installation (All Go Tools)
 
 If you have Go installed, you can install all Go-based tools at once:
@@ -379,6 +412,10 @@ Basic usage:
 | `-gf` | Enable GF patterns to filter URLs for vulnerabilities |
 | `-grep` | Extract juicy URLs by keywords (configs, backups, secrets, admin panels, etc.) |
 | `-port` | Enable port scanning with Naabu and Nmap |
+| `-cms` | Enable CMS detection and vulnerability scanning with wpscan |
+| `-jsendpoints` | Extract hidden endpoints from JavaScript files with LinkFinder |
+| `-screenshot` | Capture screenshots of live hosts with gowitness |
+| `-vuln` | Run Nuclei with critical/high severity vulnerability templates |
 | `-compare` | Compare subdomains with previous scan (subdomain enum + live check only) |
 | `--webhook <url>` | Use custom Discord webhook URL |
 | `--no-notify` | Disable Discord notifications |
@@ -445,9 +482,34 @@ Basic usage:
 ./0xMarvul_RECON_FLOW.sh target.com -compare
 ```
 
+**With CMS vulnerability scanning:**
+```bash
+./0xMarvul_RECON_FLOW.sh example.com -cms
+```
+
+**With JS endpoint extraction:**
+```bash
+./0xMarvul_RECON_FLOW.sh example.com -jsendpoints
+```
+
+**With screenshot capture:**
+```bash
+./0xMarvul_RECON_FLOW.sh example.com -screenshot
+```
+
+**With critical vulnerability scanning:**
+```bash
+./0xMarvul_RECON_FLOW.sh example.com -vuln
+```
+
+**With new advanced features combined:**
+```bash
+./0xMarvul_RECON_FLOW.sh example.com -cms -jsendpoints -screenshot -vuln
+```
+
 **With all optional features:**
 ```bash
-./0xMarvul_RECON_FLOW.sh example.com -parallel -moreurls -dir -secret -takeover -gf -port
+./0xMarvul_RECON_FLOW.sh example.com -parallel -moreurls -dir -secret -takeover -gf -port -cms -jsendpoints -screenshot -vuln
 ```
 
 **Custom webhook without notifications:**
@@ -521,7 +583,11 @@ target.com/
 │   └── secrets_found.txt       # Secrets found by SecretFinder
 ├── mar0xwan.txt                # Dirsearch results (only if -dir flag used)
 ├── open_ports.txt              # Open ports discovered by Naabu (only if -port flag used)
-└── ports_detailed.txt          # Detailed port scan with service detection (only if -port flag used)
+├── ports_detailed.txt          # Detailed port scan with service detection (only if -port flag used)
+├── cms_scan.txt                # CMS vulnerability scan results (only if -cms flag used)
+├── endpoints.txt               # Hidden endpoints extracted from JS files (only if -jsendpoints flag used)
+├── screenshots/                # Directory containing screenshots of live hosts (only if -screenshot flag used)
+└── vuln_scan.txt               # Critical/high severity vulnerabilities (only if -vuln flag used)
 ```
 
 ### With `-grep` flag:
@@ -721,6 +787,10 @@ The tool uses color-coded output for better readability:
 | `grep_results/internal.txt` | Internal path URLs | internal, private paths |
 | `grep_results/cloud.txt` | Cloud service URLs | s3, amazonaws |
 | `grep_results/ALL_JUICY.txt` | All juicy URLs combined | Complete list of findings |
+| `cms_scan.txt` | CMS vulnerability scan results | WordPress vulnerabilities (if -cms used) |
+| `endpoints.txt` | Extracted JS endpoints | Hidden API endpoints from JavaScript (if -jsendpoints used) |
+| `screenshots/` | Screenshot directory | Visual recon of live hosts (if -screenshot used) |
+| `vuln_scan.txt` | Vulnerability scan results | Critical/high severity vulnerabilities (if -vuln used) |
 
 ## BIGRAC Detection
 
