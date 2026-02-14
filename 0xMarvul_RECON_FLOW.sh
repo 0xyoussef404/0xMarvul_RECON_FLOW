@@ -1454,15 +1454,30 @@ EOF
             print_info "Detecting and scanning WordPress sites..."
             print_skip_hint
             
-            # Check if WordPress sites exist
+            # Check tech_detect.txt for WordPress sites or use httpx to detect
             wordpress_sites=()
-            while IFS= read -r url; do
-                # Quick check if site uses WordPress
-                if echo "$technologies" | grep -iq "wordpress" 2>/dev/null || \
-                   curl -s -L "$url/wp-login.php" -m 5 2>/dev/null | grep -q "wordpress" 2>/dev/null; then
-                    wordpress_sites+=("$url")
-                fi
-            done < live_hosts.txt
+            
+            # First check tech_detect.txt if it exists
+            if [ -s tech_detect.txt ]; then
+                while IFS= read -r line; do
+                    if echo "$line" | grep -iq "wordpress"; then
+                        url=$(echo "$line" | awk '{print $1}')
+                        if [ -n "$url" ]; then
+                            wordpress_sites+=("$url")
+                        fi
+                    fi
+                done < tech_detect.txt
+            fi
+            
+            # If no WordPress found in tech_detect, try quick check on first few live hosts
+            if [ ${#wordpress_sites[@]} -eq 0 ]; then
+                print_info "Checking for WordPress installations..."
+                head -n 10 live_hosts.txt | while IFS= read -r url; do
+                    if timeout 5 curl -s -L "$url/wp-login.php" 2>/dev/null | grep -iq "wordpress"; then
+                        wordpress_sites+=("$url")
+                    fi
+                done
+            fi
             
             if [ ${#wordpress_sites[@]} -gt 0 ]; then
                 print_info "Found ${#wordpress_sites[@]} WordPress site(s)"
