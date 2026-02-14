@@ -4,6 +4,12 @@
 
 A comprehensive bash-based reconnaissance automation tool for bug bounty hunting and security assessments. This tool automates the process of subdomain enumeration, live host discovery, URL gathering, and sensitive file detection.
 
+## 📚 Documentation
+
+- **[Quick Reference](QUICK_REFERENCE.md)** - Fast command reference for new features
+- **[New Features Guide](NEW_FEATURES.md)** - Detailed documentation for recently added features
+- **[Full README](#features)** - Complete feature list and usage examples (below)
+
 ## Features
 
 - **Automated Subdomain Enumeration**: Uses multiple sources (Subfinder, Assetfinder, crt.sh, Shrewdeye, HackerTarget, RapidDNS, Anubis-DB)
